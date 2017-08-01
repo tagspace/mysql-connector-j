@@ -176,6 +176,29 @@ public class StandardSocketFactory implements SocketFactory {
             }
 
             if (this.host != null) {
+                //
+                // check whether a SOCKS proxy will be used for this uri
+                // because if it will, then we shouldn't resolve the host address beforehand.
+                //
+                boolean isSocks = false;
+                try {
+                    java.net.ProxySelector sel = java.security.AccessController.doPrivileged(
+                    new java.security.PrivilegedAction<java.net.ProxySelector>() {
+                        public java.net.ProxySelector run() {
+                                return java.net.ProxySelector.getDefault();
+                            }
+                        });
+                    java.net.URI uri = new java.net.URI("socket://" + this.host + ":"+ this.port);
+                    if(sel != null) {
+                        java.net.Proxy p = sel.select(uri)
+                            .iterator()
+                            .next();
+                        isSocks = p.type() == java.net.Proxy.Type.SOCKS;
+                    }
+                } catch(Exception ie) {
+                    //not socks
+                }
+
                 InetAddress[] possibleAddresses = InetAddress.getAllByName(this.host);
 
                 if (possibleAddresses.length == 0) {
@@ -193,7 +216,10 @@ public class StandardSocketFactory implements SocketFactory {
 
                         configureSocket(this.rawSocket, props);
 
-                        InetSocketAddress sockAddr = new InetSocketAddress(possibleAddresses[i], this.port);
+                        InetSocketAddress sockAddr = isSocks
+                            ? InetSocketAddress.createUnresolved(this.host, this.port)
+                            : new InetSocketAddress(possibleAddresses[i], this.port);
+
                         // bind to the local port if not using the ephemeral port
                         if (localSockAddr != null) {
                             this.rawSocket.bind(localSockAddr);
